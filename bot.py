@@ -27,27 +27,26 @@ logger = logging.getLogger(__name__)
 
 async def health_check_handler(request):
     """Render.com uchun HTTP health-check tekshiruvi"""
-    return web.Response(text="AvtoGaz Bot is running successfully on Render! 🚗💨")
+    return web.Response(text="AvtoGaz Bot is running successfully on Render! 🚗💨", content_type="text/plain")
 
 async def start_dummy_web_server():
     """
-    Render.com Web Service rejimida PORT kutadi.
-    Agar PORT o'zgaruvchisi mavjud bo'lsa, kichik HTTP serverni ishga tushiramiz.
+    Render.com Web Service rejimida portni tinglaydi.
+    PORT muhit o'zgaruvchisi (odatda 10000) orqali darhol 0.0.0.0 da HTTP server ochadi.
     """
-    port_env = os.getenv("PORT")
-    if port_env:
-        try:
-            port = int(port_env)
-            app = web.Application()
-            app.router.add_get("/", health_check_handler)
-            app.router.add_get("/health", health_check_handler)
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, "0.0.0.0", port)
-            await site.start()
-            logger.info(f"Render uchun HTTP server {port}-portda muvaffaqiyatli ishga tushdi.")
-        except Exception as e:
-            logger.warning(f"HTTP serverni ishga tushirishda xatolik: {e}")
+    port = int(os.getenv("PORT", "10000"))
+    try:
+        app = web.Application()
+        app.router.add_get("/", health_check_handler)
+        app.router.add_get("/health", health_check_handler)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        logger.info(f"Render uchun HTTP server 0.0.0.0:{port}-portda muvaffaqiyatli ishga tushdi.")
+        print(f"==> Port {port} ochiq va tinglanmoqda (Render Web Service live).", flush=True)
+    except Exception as e:
+        logger.warning(f"HTTP serverni ishga tushirishda xatolik: {e}")
 
 async def set_bot_commands(bot: Bot):
     """Telegram ilovasida menyu tugmasidagi buyruqlar ro'yxati"""
@@ -72,7 +71,7 @@ async def main():
         logger.error("BOT_TOKEN ko'rsatilmagan yoki noto'g'ri!")
         return
 
-    # Render Web Service uchun portni tinglash
+    # Render Web Service uchun portni ochish (Timed out bo'lmasligi uchun)
     await start_dummy_web_server()
 
     # Bot va Dispatcher yaratish
@@ -91,7 +90,7 @@ async def main():
     print(f"\n==========================================")
     print(f" AvtoGaz Bot ishga tushdi: @{me.username}")
     print(f" Telegramdan @{me.username} ga kiring va /start bosing!")
-    print(f"==========================================\n")
+    print(f"==========================================\n", flush=True)
 
     # Eski kutilayotgan xabarlarni tozalash
     await bot.delete_webhook(drop_pending_updates=True)
