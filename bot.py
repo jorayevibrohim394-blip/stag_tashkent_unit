@@ -1,12 +1,14 @@
 """
 AvtoGaz Telegram Boti - Asosiy ishga tushiruvchi fayl (main entry point)
 Render.com Web Service va Background Worker bilan to'liq moslashgan.
+Doimiy 24/7 ishlash uchun avtomatik Keep-Alive mexanizmiga ega.
 """
 import asyncio
 import logging
 import os
 import sys
 
+import aiohttp
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -27,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 async def health_check_handler(request):
     """Render.com uchun HTTP health-check tekshiruvi"""
-    return web.Response(text="AvtoGaz Bot is running successfully on Render! 🚗💨", content_type="text/plain")
+    return web.Response(text="AvtoGaz Bot is running successfully 24/7! 🚗💨", content_type="text/plain")
 
 async def start_dummy_web_server():
     """
@@ -47,6 +49,28 @@ async def start_dummy_web_server():
         print(f"==> Port {port} ochiq va tinglanmoqda (Render Web Service live).", flush=True)
     except Exception as e:
         logger.warning(f"HTTP serverni ishga tushirishda xatolik: {e}")
+
+async def render_keep_alive():
+    """
+    Render bepul tarifida 15 daqiqada uxlab qolmasligi uchun
+    har 10 daqiqada o'ziga o'zi HTTP so'rov yuborib turadi (24/7 hushyor saqlash).
+    """
+    url = os.getenv("RENDER_EXTERNAL_URL")
+    if not url:
+        return
+
+    logger.info(f"Render Keep-Alive faollashtirildi: {url}")
+    await asyncio.sleep(60)  # Dastlab 1 daqiqa kutish
+
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                ping_url = f"{url.rstrip('/')}/health"
+                async with session.get(ping_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    logger.info(f"Render Keep-Alive ping muvaffaqiyatli: {resp.status}")
+            except Exception as e:
+                logger.warning(f"Render Keep-Alive ping xatosi: {e}")
+            await asyncio.sleep(600)  # Har 10 daqiqada bir marta
 
 async def set_bot_commands(bot: Bot):
     """Telegram ilovasida menyu tugmasidagi buyruqlar ro'yxati"""
@@ -71,10 +95,13 @@ async def main():
         logger.error("BOT_TOKEN ko'rsatilmagan yoki noto'g'ri!")
         return
 
-    # Render Web Service uchun portni ochish (Timed out bo'lmasligi uchun)
+    # 1. Render Web Service uchun portni ochish
     await start_dummy_web_server()
 
-    # Bot va Dispatcher yaratish
+    # 2. Render uxlamasligi uchun fonda Keep-Alive vazifasini ishga tushirish
+    asyncio.create_task(render_keep_alive())
+
+    # 3. Bot va Dispatcher yaratish
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
@@ -92,8 +119,8 @@ async def main():
     print(f" Telegramdan @{me.username} ga kiring va /start bosing!")
     print(f"==========================================\n", flush=True)
 
-    # Eski kutilayotgan xabarlarni tozalash
-    await bot.delete_webhook(drop_pending_updates=True)
+    # Kutilayotgan xabarlarni o'chirmasdan qabul qilib olish
+    await bot.delete_webhook(drop_pending_updates=False)
 
     # Pollingni boshlash
     try:
